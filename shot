@@ -1,0 +1,79 @@
+#!/usr/bin/env ruby
+
+require 'csv'
+
+# Load CSV file
+def load_data(file_path)
+  CSV.read(file_path, headers: true, converters: :numeric)
+end
+
+# Calculate quartiles manually
+def quartiles(values)
+  sorted = values.sort
+  mid = sorted.length / 2
+  q1 = sorted.length.even? ? (sorted[mid / 2 - 1] + sorted[mid / 2]) / 2.0 : sorted[mid / 2]
+  q3 = sorted.length.even? ? (sorted[mid + mid / 2 - 1] + sorted[mid + mid / 2]) / 2.0 : sorted[mid + mid / 2]
+  [q1, q3]
+end
+
+# Compute median manually
+def median(values)
+  sorted = values.sort
+  len = sorted.length
+  len.odd? ? sorted[len / 2] : (sorted[len / 2 - 1] + sorted[len / 2]) / 2.0
+end
+
+# Detect and remove outliers using the 1.5*IQR rule
+def filter_outliers(data, club_type, key_metrics)
+  data = data.select { |row| row["Club Type"].downcase.include?(club_type) }
+
+  key_metrics.each do |metric|
+    values = data.map { |row| row[metric].to_f if row[metric] }.compact
+    next if values.empty?
+
+    q1, q3 = quartiles(values)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    data = data.select { |row| row[metric] && row[metric].to_f >= lower_bound && row[metric].to_f <= upper_bound }
+  end
+  data
+end
+
+# Find the most representative shot
+def find_representative_shot(data, key_metrics)
+  medians = key_metrics.map do |metric|
+    values = data.map { |row| row[metric].to_f if row[metric] }.compact
+    [metric, median(values)]
+  end.to_h
+
+  data.min_by do |row|
+    key_metrics.sum { |metric| (row[metric].to_f - medians[metric]).abs }
+  end
+end
+
+# Get file path from command-line arguments
+if ARGV.empty?
+  puts 'Usage: ruby script.rb <file_path> <club>'
+  puts 'Defaults to wedge type club'
+  puts 'Filters shots on 4 key metrics and finds the median of the filtered set'
+  puts 'Ball speed, carry, efficiency and offline yardage.'
+  exit 1
+end
+
+file_path = ARGV[0]
+club_type = ARGV[1] || "wedge"
+data = load_data(file_path)
+key_metrics = ['Ball Speed (mph)', 'Carry (yds)', 'Efficiency', "Offline (yds L-/R+)"]
+filtered_data = filter_outliers(data, club_type, key_metrics)
+if filtered_data.empty?
+  puts "No data found with club type of #{club_type}"
+else
+  representative_shot = find_representative_shot(filtered_data, key_metrics).to_h
+  representative_shot.each do |k, v|
+    next if v.nil?
+    next if ["Club Name", "Club Type", "Shot Created Date"].include?(k)
+
+    puts "#{k}: #{v}"
+  end
+end
