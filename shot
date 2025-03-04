@@ -52,9 +52,14 @@ def find_representative_shot(data, key_metrics)
   end
 end
 
+# Get a shot number
+def get_shot(data, shot)
+  data.select { |row| row[0].to_i == shot.to_i }.first
+end
+
 # Get file path from command-line arguments
 if ARGV.empty?
-  puts 'Usage: ruby script.rb <file_path> <club>'
+  puts 'Usage: shot <file_path> <club>'
   puts 'Defaults to wedge type club'
   puts 'Filters shots on 4 key metrics and finds the median of the filtered set'
   puts 'Ball speed, carry, efficiency and offline yardage.'
@@ -62,18 +67,54 @@ if ARGV.empty?
 end
 
 file_path = ARGV[0]
-club_type = ARGV[1] || "wedge"
 data = load_data(file_path)
-key_metrics = ['Ball Speed (mph)', 'Carry (yds)', 'Efficiency', "Offline (yds L-/R+)"]
-filtered_data = filter_outliers(data, club_type, key_metrics)
-if filtered_data.empty?
-  puts "No data found with club type of #{club_type}"
-else
-  representative_shot = find_representative_shot(filtered_data, key_metrics).to_h
-  representative_shot.each do |k, v|
-    next if v.nil?
-    next if ["Club Name", "Club Type", "Shot Created Date"].include?(k)
 
-    puts "#{k}: #{v}"
+should_exit = false
+until should_exit
+  puts "Would you like to:"
+  puts "1) Get a shot from the data set"
+  puts "2) Find the best average shot"
+  puts "3) Quit"
+  print "> "
+  valid = false
+  until valid
+    action = STDIN.gets.chomp
+    valid = ["1", "2", "3", "s", "shot", "a", "average", "q", "quit"].include?(action.downcase)
+    should_exit = ["q", "quit"].include?(action.downcase)
+
+    case action.downcase
+    when "1", "s", "shot"
+      min = 1
+      max = data.values_at(-1).first[0]
+      print "Which shot? (#{min} - #{max}) "
+      valid = false
+      until valid
+        shot_input = STDIN.gets.chomp
+        valid = (min..max).cover?(shot_input.to_i) || ["q", "quit"].include?(shot_input.downcase)
+        should_exit = ["q", "quit"].include?(shot_input.downcase)
+      end
+      shot = get_shot(data, shot_input)
+      shot.each do |k, v|
+        next if v.nil?
+        next if ["Club Name", "Club Type", "Shot Created Date"].include?(k)
+
+        puts "#{k}: #{v}"
+      end
+    when "2", "a", "average"
+      club_type = ARGV[1] || "wedge"
+      key_metrics = ['Ball Speed (mph)', 'Carry (yds)', 'Efficiency', "Offline (yds L-/R+)"]
+      filtered_data = filter_outliers(data, club_type, key_metrics)
+      if filtered_data.empty?
+        puts "No data found with club type of #{club_type}"
+      else
+        representative_shot = find_representative_shot(filtered_data, key_metrics).to_h
+        representative_shot.each do |k, v|
+          next if v.nil?
+          next if ["Club Name", "Club Type", "Shot Created Date"].include?(k)
+
+          puts "#{k}: #{v}"
+        end
+      end
+    end
   end
 end
